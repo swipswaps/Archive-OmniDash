@@ -15,14 +15,29 @@ type ExportFormat = 'text' | 'csv' | 'json' | 'xlsx' | 'sql';
 const ExportModal: React.FC<ExportModalProps> = ({ isOpen, onClose, data }) => {
   const [format, setFormat] = useState<ExportFormat>('json');
   const [content, setContent] = useState('');
+  const [xlsxPreview, setXlsxPreview] = useState('');
   const [copied, setCopied] = useState(false);
 
-  // Strip large HTML content for metadata export to prevent UI lag
-  const getCleanData = () => {
-    return data.map(({ content, ...rest }) => ({
-      ...rest,
-      savedAtISO: new Date(rest.savedAt).toISOString()
-    }));
+  // Prepare data for export
+  const getExportData = (forExcel = false) => {
+    return data.map((item) => {
+      let pageContent = item.content || '';
+      // Excel has a cell character limit of 32,767 characters.
+      // We truncate it to avoid file corruption for the XLSX format.
+      if (forExcel && pageContent.length > 32000) {
+        pageContent = pageContent.substring(0, 32000) + '...[TRUNCATED FOR EXCEL LIMIT]';
+      }
+
+      return {
+        id: item.id,
+        url: item.url,
+        originalUrl: item.originalUrl,
+        timestamp: item.timestamp,
+        savedAtISO: new Date(item.savedAt).toISOString(),
+        mimetype: item.mimetype,
+        page_content: pageContent
+      };
+    });
   };
 
   useEffect(() => {
@@ -32,37 +47,39 @@ const ExportModal: React.FC<ExportModalProps> = ({ isOpen, onClose, data }) => {
   }, [format, isOpen, data]);
 
   const generateContent = (fmt: ExportFormat) => {
-    const cleanData = getCleanData();
+    setContent('');
+    setXlsxPreview('');
+
+    const fullData = getExportData(false);
+    const excelData = getExportData(true);
 
     switch (fmt) {
       case 'json':
-        setContent(JSON.stringify(cleanData, null, 2));
+        setContent(JSON.stringify(fullData, null, 2));
         break;
       case 'csv':
-        setContent(generateCSV(cleanData));
+        const csvWs = XLSX.utils.json_to_sheet(fullData);
+        // Using sheet_to_csv handles quoting and escaping better than manual string manipulation
+        setContent(XLSX.utils.sheet_to_csv(csvWs));
         break;
       case 'text':
-        setContent(generateText(cleanData));
+        setContent(generateText(fullData));
         break;
       case 'sql':
-        setContent(generateSQL(cleanData));
+        setContent(generateSQL(fullData));
         break;
       case 'xlsx':
-        setContent("Binary Excel file ready for download.\n\nPreview not available for binary formats.");
+        const ws = XLSX.utils.json_to_sheet(excelData);
+        // Generate HTML table for preview
+        const html = XLSX.utils.sheet_to_html(ws, { id: "xlsx-preview", header: "", footer: "" });
+        setXlsxPreview(html);
         break;
     }
   };
 
-  const generateCSV = (items: any[]) => {
-    if (items.length === 0) return '';
-    const headers = Object.keys(items[0]).join(',');
-    const rows = items.map(item => Object.values(item).map(val => `"${String(val).replace(/"/g, '""')}"`).join(','));
-    return [headers, ...rows].join('\n');
-  };
-
   const generateText = (items: any[]) => {
     return items.map(item => `
---------------------------------------------------
+==================================================
 ID: ${item.id}
 Original URL: ${item.originalUrl}
 Wayback URL: ${item.url}
@@ -70,7 +87,10 @@ Timestamp: ${item.timestamp}
 Saved At: ${item.savedAtISO}
 MimeType: ${item.mimetype}
 --------------------------------------------------
-`).join('');
+CONTENT PREVIEW:
+${item.page_content.substring(0, 500)}${item.page_content.length > 500 ? '...' : ''}
+==================================================
+`).join('\n\n');
   };
 
   const generateSQL = (items: any[]) => {
@@ -81,13 +101,18 @@ MimeType: ${item.mimetype}
   url TEXT,
   original_url TEXT,
   timestamp VARCHAR(20),
-  saved_at BIGINT,
-  mimetype VARCHAR(50)
+  saved_at VARCHAR(30),
+  mimetype VARCHAR(50),
+  page_content TEXT
 );\n\n`;
 
     const inserts = items.map(item => {
       const values = Object.values(item)
-        .map(val => `'${String(val).replace(/'/g, "''")}'`) // Simple SQL escaping
+        .map(val => {
+           // Basic SQL escaping: replace single quotes with two single quotes
+           const str = String(val).replace(/'/g, "''");
+           return `'${str}'`;
+        }) 
         .join(', ');
       return `INSERT INTO ${tableName} VALUES (${values});`;
     }).join('\n');
@@ -96,19 +121,27 @@ MimeType: ${item.mimetype}
   };
 
   const handleCopy = () => {
-    if (format === 'xlsx') return;
-    navigator.clipboard.writeText(content);
+    let textToCopy = content;
+    
+    // For XLSX, we copy a TSV (Tab Separated Values) representation 
+    // which allows pasting directly into Excel/Sheets
+    if (format === 'xlsx') {
+        const ws = XLSX.utils.json_to_sheet(getExportData(true));
+        textToCopy = XLSX.utils.sheet_to_csv(ws, { FS: "\t" });
+    }
+
+    navigator.clipboard.writeText(textToCopy);
     setCopied(true);
     setTimeout(() => setCopied(false), 2000);
   };
 
   const handleDownload = () => {
-    const cleanData = getCleanData();
     const timestamp = new Date().toISOString().slice(0, 10);
     const filename = `omnidash_export_${timestamp}`;
 
     if (format === 'xlsx') {
-      const ws = XLSX.utils.json_to_sheet(cleanData);
+      const excelData = getExportData(true);
+      const ws = XLSX.utils.json_to_sheet(excelData);
       const wb = XLSX.utils.book_new();
       XLSX.utils.book_append_sheet(wb, ws, "Snapshots");
       XLSX.writeFile(wb, `${filename}.xlsx`);
@@ -119,6 +152,7 @@ MimeType: ${item.mimetype}
         text: 'text/plain',
         sql: 'application/sql'
       };
+      
       const blob = new Blob([content], { type: mimeTypes[format] });
       const url = URL.createObjectURL(blob);
       const a = document.createElement('a');
@@ -135,10 +169,10 @@ MimeType: ${item.mimetype}
 
   return (
     <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4 animate-in fade-in duration-200">
-      <div className="bg-gray-900 w-full max-w-4xl rounded-2xl border border-gray-700 shadow-2xl flex flex-col max-h-[90vh]">
+      <div className="bg-gray-900 w-full max-w-5xl rounded-2xl border border-gray-700 shadow-2xl flex flex-col h-[85vh]">
         
         {/* Header */}
-        <div className="flex items-center justify-between p-6 border-b border-gray-800">
+        <div className="flex items-center justify-between p-6 border-b border-gray-800 shrink-0">
           <h2 className="text-xl font-bold text-white flex items-center gap-2">
             <Database className="w-5 h-5 text-teal-400" /> Export Database
           </h2>
@@ -148,11 +182,11 @@ MimeType: ${item.mimetype}
         </div>
 
         {/* Tabs */}
-        <div className="flex bg-gray-950/50 p-2 gap-1 border-b border-gray-800 overflow-x-auto">
+        <div className="flex bg-gray-950/50 p-2 gap-1 border-b border-gray-800 overflow-x-auto shrink-0">
            {[
-             { id: 'text', label: 'Text', icon: FileText },
-             { id: 'csv', label: 'CSV', icon: Table },
              { id: 'json', label: 'JSON', icon: FileJson },
+             { id: 'csv', label: 'CSV', icon: Table },
+             { id: 'text', label: 'Text', icon: FileText },
              { id: 'xlsx', label: 'Excel', icon: FileSpreadsheet },
              { id: 'sql', label: 'SQL', icon: Database },
            ].map((tab) => (
@@ -173,10 +207,14 @@ MimeType: ${item.mimetype}
         {/* Content Area */}
         <div className="flex-1 p-0 overflow-hidden relative bg-gray-950">
           {format === 'xlsx' ? (
-             <div className="absolute inset-0 flex flex-col items-center justify-center text-gray-500">
-                <FileSpreadsheet className="w-16 h-16 mb-4 opacity-50" />
-                <p className="text-lg">Preview not available for binary XLSX.</p>
-                <p className="text-sm">Click "Download File" to save the spreadsheet.</p>
+             <div className="w-full h-full overflow-auto p-6 bg-gray-100 text-gray-900">
+                 {/* XLSX Preview Styling */}
+                 <style>{`
+                    table { border-collapse: collapse; width: 100%; font-size: 12px; font-family: sans-serif; }
+                    th, td { border: 1px solid #d1d5db; padding: 6px; text-align: left; max-width: 300px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+                    th { bg-color: #f3f4f6; font-weight: bold; }
+                 `}</style>
+                 <div dangerouslySetInnerHTML={{ __html: xlsxPreview }} />
              </div>
           ) : (
             <textarea
@@ -189,17 +227,15 @@ MimeType: ${item.mimetype}
         </div>
 
         {/* Footer */}
-        <div className="p-6 border-t border-gray-800 bg-gray-900 flex justify-between items-center">
+        <div className="p-6 border-t border-gray-800 bg-gray-900 flex justify-between items-center shrink-0">
             <div className="text-xs text-gray-500">
-                Exporting {data.length} records. (Content HTML excluded)
+                Exporting {data.length} records. {format === 'xlsx' ? '(Content truncated to 32k chars)' : '(Full Content Included)'}
             </div>
             <div className="flex gap-3">
-                {format !== 'xlsx' && (
-                    <Button variant="secondary" onClick={handleCopy}>
-                        {copied ? <Check className="w-4 h-4 mr-2" /> : <Copy className="w-4 h-4 mr-2" />}
-                        {copied ? 'Copied' : 'Copy to Clipboard'}
-                    </Button>
-                )}
+                <Button variant="secondary" onClick={handleCopy}>
+                    {copied ? <Check className="w-4 h-4 mr-2" /> : <Copy className="w-4 h-4 mr-2" />}
+                    {copied ? 'Copied' : 'Copy to Clipboard'}
+                </Button>
                 <Button onClick={handleDownload}>
                     <Download className="w-4 h-4 mr-2" /> Download File
                 </Button>
