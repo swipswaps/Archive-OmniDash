@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { Globe, Camera, Calendar, CheckCircle, XCircle, AlertTriangle, ExternalLink, Loader2, Trash2, Search, BarChart3, Clock, X, Filter, Download, Database, Play, Settings as SettingsIcon, FileDown } from 'lucide-react';
+import { Globe, Camera, Calendar, CheckCircle, XCircle, AlertTriangle, ExternalLink, Loader2, Trash2, Search, BarChart3, Clock, X, Filter, Download, Database, Play, Settings as SettingsIcon, FileDown, Eye, Maximize2, Minimize2 } from 'lucide-react';
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, Cell } from 'recharts';
 import { checkAvailability, savePageNow, fetchCDX, downloadSnapshotContent } from '../services/waybackService';
 import { storageService } from '../services/storageService';
@@ -31,6 +31,9 @@ const WaybackTools: React.FC<Props> = ({ settings, onChangeView }) => {
   const [hasSearched, setHasSearched] = useState(false);
   const [selectedYear, setSelectedYear] = useState<string | null>(null);
   const [downloadingId, setDownloadingId] = useState<string | null>(null);
+  
+  // Preview Modal State
+  const [previewSnapshot, setPreviewSnapshot] = useState<SavedSnapshot | null>(null);
   
   const inputRef = useRef<HTMLInputElement>(null);
 
@@ -220,11 +223,25 @@ const WaybackTools: React.FC<Props> = ({ settings, onChangeView }) => {
     }
   };
 
-  const handleServeSnapshot = (snapshot: SavedSnapshot) => {
-      const blob = new Blob([snapshot.content], { type: 'text/html' });
-      const blobUrl = URL.createObjectURL(blob);
-      window.open(blobUrl, '_blank');
-      setTimeout(() => URL.revokeObjectURL(blobUrl), 60000); 
+  const handlePreviewSnapshot = (snapshot: SavedSnapshot) => {
+      setPreviewSnapshot(snapshot);
+  };
+
+  const getPreviewContent = (snap: SavedSnapshot) => {
+      // Inject <base> tag to fix relative links/images by pointing them to the live Wayback Machine URL
+      // This allows the saved HTML to render images/CSS that are not saved locally.
+      const baseTag = `<base href="${snap.url}" target="_blank" />`;
+      
+      // Inject standard styles to ensure readability if CSS fails
+      const styleTag = `<style>body { background: white; color: black; font-family: sans-serif; }</style>`;
+
+      let html = snap.content;
+      if (html.toLowerCase().includes('<head>')) {
+          html = html.replace(/<head>/i, `<head>${baseTag}${styleTag}`);
+      } else {
+          html = `${baseTag}${styleTag}${html}`;
+      }
+      return html;
   };
 
   const handleExportSnapshot = (snapshot: SavedSnapshot) => {
@@ -243,6 +260,9 @@ const WaybackTools: React.FC<Props> = ({ settings, onChangeView }) => {
       if (confirm('Delete this saved snapshot?')) {
           await storageService.deleteSnapshot(id);
           loadSavedSnapshots();
+          if (previewSnapshot?.id === id) {
+              setPreviewSnapshot(null);
+          }
       }
   };
 
@@ -290,7 +310,7 @@ const WaybackTools: React.FC<Props> = ({ settings, onChangeView }) => {
   };
 
   return (
-    <div className="h-full flex flex-col space-y-6">
+    <div className="h-full flex flex-col space-y-6 relative">
       {/* Primary Search Card */}
       <div className="bg-gray-800 rounded-2xl border border-gray-700 shadow-xl overflow-hidden shrink-0">
          <div className="p-8 pb-6">
@@ -717,11 +737,11 @@ const WaybackTools: React.FC<Props> = ({ settings, onChangeView }) => {
                                                     <FileDown className="w-3 h-3" />
                                                 </button>
                                                 <button
-                                                    onClick={() => handleServeSnapshot(snap)}
+                                                    onClick={() => handlePreviewSnapshot(snap)}
                                                     className="text-green-400 hover:text-green-300 hover:bg-green-500/10 p-1.5 rounded-lg flex items-center gap-1 text-xs font-bold"
-                                                    title="View in Browser"
+                                                    title="Preview Content"
                                                 >
-                                                    <Play className="w-3 h-3" />
+                                                    <Eye className="w-3 h-3" />
                                                 </button>
                                                 <button
                                                     onClick={() => handleDeleteSnapshot(snap.id)}
@@ -741,6 +761,49 @@ const WaybackTools: React.FC<Props> = ({ settings, onChangeView }) => {
             </div>
         )}
       </div>
+
+      {/* Inline Preview Modal */}
+      {previewSnapshot && (
+          <div className="fixed inset-0 z-50 bg-black/90 backdrop-blur-sm flex items-center justify-center p-4 sm:p-8 animate-in fade-in duration-200">
+              <div className="bg-gray-900 w-full h-full max-w-6xl rounded-2xl shadow-2xl flex flex-col border border-gray-700 overflow-hidden relative">
+                   <div className="h-14 bg-gray-950 border-b border-gray-800 flex items-center justify-between px-6 shrink-0">
+                       <div className="flex items-center gap-4 min-w-0">
+                           <div className="flex items-center gap-2 text-white font-medium truncate">
+                               <Globe className="w-4 h-4 text-teal-400" />
+                               <span className="truncate">{previewSnapshot.originalUrl}</span>
+                           </div>
+                           <span className="text-xs text-gray-500 font-mono bg-gray-900 px-2 py-0.5 rounded border border-gray-800">
+                               {formatTimestamp(previewSnapshot.timestamp)}
+                           </span>
+                       </div>
+                       <div className="flex items-center gap-3">
+                            <a 
+                                href={previewSnapshot.url} 
+                                target="_blank" 
+                                rel="noreferrer"
+                                className="text-xs text-teal-500 hover:text-teal-400 flex items-center gap-1 mr-2"
+                            >
+                                View Live <ExternalLink className="w-3 h-3" />
+                            </a>
+                            <button 
+                                onClick={() => setPreviewSnapshot(null)}
+                                className="p-2 hover:bg-gray-800 rounded-full text-gray-400 hover:text-white transition-colors"
+                            >
+                                <X className="w-5 h-5" />
+                            </button>
+                       </div>
+                   </div>
+                   <div className="flex-1 bg-white relative">
+                       <iframe 
+                           srcDoc={getPreviewContent(previewSnapshot)}
+                           className="absolute inset-0 w-full h-full border-0"
+                           title="Snapshot Preview"
+                           sandbox="allow-same-origin allow-scripts" 
+                       />
+                   </div>
+              </div>
+          </div>
+      )}
     </div>
   );
 };
