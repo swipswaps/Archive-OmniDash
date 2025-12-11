@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
-import { BarChart3, Sparkles, AlertTriangle, Lightbulb, Settings as SettingsIcon, TestTube2, Info, Search, ArrowRight, X } from 'lucide-react';
+import { BarChart3, Sparkles, AlertTriangle, Lightbulb, Settings as SettingsIcon, TestTube2, Info, Search, ArrowRight, X, Database } from 'lucide-react';
 import { fetchViews, searchItems } from '../services/iaService';
 import { AppSettings, AppView } from '../types';
 import { Button } from '../components/ui/Button';
@@ -108,7 +108,7 @@ const AnalyticsDashboard: React.FC<Props> = ({ settings, onChangeView }) => {
       // 3. Final Check
       if (finalData.length === 0) {
           if (initialError) throw initialError; // Throw the original error if we couldn't resolve
-          throw new Error('No view data found. The item might not exist or has no traffic.');
+          throw new Error('No view data found. The item Identifier might be incorrect, or the item has no recorded traffic.');
       } else {
           setData(finalData);
       }
@@ -239,17 +239,28 @@ const AnalyticsDashboard: React.FC<Props> = ({ settings, onChangeView }) => {
                                 </div>
                             </div>
                         ) : (
-                             <div className="mt-2 flex gap-2">
-                                <Button 
-                                    variant="secondary" 
-                                    className="text-xs h-8"
-                                    onClick={() => {
-                                        // Try to help user by sending them to search
-                                        if (onChangeView) onChangeView(AppView.SCRAPING);
-                                    }}
-                                >
-                                    <Search className="w-3 h-3 mr-1" /> Search for "{identifier}" in Library
-                                </Button>
+                             <div className="mt-2 flex flex-col gap-2">
+                                <p className="text-xs text-gray-400">Not sure if "{identifier}" is the correct ID? Use the Item Lookup tool to verify.</p>
+                                <div className="flex gap-2">
+                                    <Button 
+                                        variant="secondary" 
+                                        className="text-xs h-8"
+                                        onClick={() => {
+                                            if (onChangeView) onChangeView(AppView.METADATA);
+                                        }}
+                                    >
+                                        <Database className="w-3 h-3 mr-1" /> Lookup Item ID
+                                    </Button>
+                                    <Button 
+                                        variant="secondary" 
+                                        className="text-xs h-8"
+                                        onClick={() => {
+                                            if (onChangeView) onChangeView(AppView.SCRAPING);
+                                        }}
+                                    >
+                                        <Search className="w-3 h-3 mr-1" /> Deep Search
+                                    </Button>
+                                </div>
                              </div>
                         )}
                     </div>

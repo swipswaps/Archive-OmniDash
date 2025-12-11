@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { Globe, Camera, Calendar, CheckCircle, XCircle, AlertTriangle, ExternalLink, Loader2, Trash2, Search, BarChart3, Clock, X, Filter, Download, Database, Play, Settings as SettingsIcon } from 'lucide-react';
+import { Globe, Camera, Calendar, CheckCircle, XCircle, AlertTriangle, ExternalLink, Loader2, Trash2, Search, BarChart3, Clock, X, Filter, Download, Database, Play, Settings as SettingsIcon, FileDown } from 'lucide-react';
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, Cell } from 'recharts';
 import { checkAvailability, savePageNow, fetchCDX, downloadSnapshotContent } from '../services/waybackService';
 import { storageService } from '../services/storageService';
@@ -164,17 +164,57 @@ const WaybackTools: React.FC<Props> = ({ settings, onChangeView }) => {
       }
   };
 
+  const handleDownloadLatest = async () => {
+    if (!availability?.archived_snapshots?.closest) return;
+    const snap = availability.archived_snapshots.closest;
+    const dlKey = 'latest-download';
+    
+    setDownloadingId(dlKey);
+    setError(null);
+
+    try {
+        const content = await downloadSnapshotContent(snap.url);
+        
+        // Generate a deterministic ID for the database so we don't save duplicates easily
+        const dbId = `${snap.timestamp}-${availability.url}`;
+
+        const snapshot: SavedSnapshot = {
+            id: dbId,
+            url: snap.url,
+            originalUrl: availability.url,
+            timestamp: snap.timestamp,
+            savedAt: Date.now(),
+            mimetype: 'text/html', // Assumption for availability check
+            content: content
+        };
+
+        await storageService.saveSnapshot(snapshot);
+        // Switch to saved tab or just notify? Notification is better.
+        alert("Snapshot saved to Local Database! Go to the 'Saved Snapshots' tab to view it.");
+    } catch (e: any) {
+        setError(e.message || "Download Failed");
+    } finally {
+        setDownloadingId(null);
+    }
+  };
+
   const handleServeSnapshot = (snapshot: SavedSnapshot) => {
-      // Create a Blob from the content
       const blob = new Blob([snapshot.content], { type: 'text/html' });
       const blobUrl = URL.createObjectURL(blob);
-      
-      // Open in new tab
       window.open(blobUrl, '_blank');
-      
-      // Note: In a real persistent app, we might want to revokeObjectURL eventually,
-      // but for opening a tab, we let the browser handle the lifecycle or revoke after a delay.
-      setTimeout(() => URL.revokeObjectURL(blobUrl), 60000); // Revoke after 1 min
+      setTimeout(() => URL.revokeObjectURL(blobUrl), 60000); 
+  };
+
+  const handleExportSnapshot = (snapshot: SavedSnapshot) => {
+      const blob = new Blob([snapshot.content], { type: 'text/html' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `wayback-${snapshot.timestamp}-${snapshot.originalUrl.replace(/[^a-z0-9]/gi, '_').slice(0, 30)}.html`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
   };
 
   const handleDeleteSnapshot = async (id: string) => {
@@ -406,14 +446,25 @@ const WaybackTools: React.FC<Props> = ({ settings, onChangeView }) => {
                                     <span className="text-sm text-gray-400 truncate max-w-[250px]" title={availability.url}>{availability.url}</span>
                                 </div>
                                 
-                                <a 
-                                    href={availability.archived_snapshots.closest.url} 
-                                    target="_blank" 
-                                    rel="noreferrer" 
-                                    className="mt-2 flex items-center justify-center gap-2 bg-teal-500 hover:bg-teal-400 text-white font-bold py-3 px-6 rounded-xl transition-all shadow-lg hover:shadow-teal-500/25"
-                                >
-                                    Open in Wayback Machine <ExternalLink className="w-4 h-4" />
-                                </a>
+                                <div className="flex gap-2 mt-2">
+                                    <a 
+                                        href={availability.archived_snapshots.closest.url} 
+                                        target="_blank" 
+                                        rel="noreferrer" 
+                                        className="flex-1 flex items-center justify-center gap-2 bg-teal-500 hover:bg-teal-400 text-white font-bold py-3 px-6 rounded-xl transition-all shadow-lg hover:shadow-teal-500/25"
+                                    >
+                                        Open in Wayback Machine <ExternalLink className="w-4 h-4" />
+                                    </a>
+                                    
+                                    <Button
+                                        onClick={handleDownloadLatest}
+                                        disabled={downloadingId === 'latest-download'}
+                                        className="bg-gray-700 hover:bg-gray-600 border border-gray-600 text-teal-400 px-4 rounded-xl"
+                                        title="Download to Local Library"
+                                    >
+                                        {downloadingId === 'latest-download' ? <Loader2 className="w-5 h-5 animate-spin" /> : <Download className="w-5 h-5" />}
+                                    </Button>
+                                </div>
                             </div>
                             
                             <Button 
@@ -600,7 +651,7 @@ const WaybackTools: React.FC<Props> = ({ settings, onChangeView }) => {
                          <div className="flex flex-col items-center justify-center h-full text-gray-500 space-y-2">
                              <Database className="w-12 h-12 opacity-50" />
                              <p>No snapshots saved locally yet.</p>
-                             <p className="text-xs">Go to the "History" tab and click the Download icon to save pages.</p>
+                             <p className="text-xs">Search for a URL, then click the Download icon in the Latest Snapshot view or History tab.</p>
                          </div>
                      ) : (
                          <table className="w-full text-sm text-left border-collapse">
@@ -627,11 +678,18 @@ const WaybackTools: React.FC<Props> = ({ settings, onChangeView }) => {
                                         <td className="px-5 py-3 text-right">
                                             <div className="flex items-center justify-end gap-3">
                                                 <button
+                                                    onClick={() => handleExportSnapshot(snap)}
+                                                    className="text-indigo-400 hover:text-indigo-300 hover:bg-indigo-500/10 p-1.5 rounded-lg flex items-center gap-1 text-xs font-bold"
+                                                    title="Export to Disk"
+                                                >
+                                                    <FileDown className="w-3 h-3" />
+                                                </button>
+                                                <button
                                                     onClick={() => handleServeSnapshot(snap)}
                                                     className="text-green-400 hover:text-green-300 hover:bg-green-500/10 p-1.5 rounded-lg flex items-center gap-1 text-xs font-bold"
-                                                    title="Serve from Local DB"
+                                                    title="View in Browser"
                                                 >
-                                                    <Play className="w-3 h-3" /> View Local
+                                                    <Play className="w-3 h-3" />
                                                 </button>
                                                 <button
                                                     onClick={() => handleDeleteSnapshot(snap.id)}
