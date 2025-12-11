@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
-import { BarChart3, Sparkles, AlertTriangle, Lightbulb, Settings as SettingsIcon, TestTube2, Info, Search, ArrowRight, X, Database } from 'lucide-react';
+import { BarChart3, Sparkles, AlertTriangle, Lightbulb, Settings as SettingsIcon, TestTube2, Info, Search, ArrowRight, X, Database, Globe } from 'lucide-react';
 import { fetchViews, searchItems } from '../services/iaService';
 import { AppSettings, AppView } from '../types';
 import { Button } from '../components/ui/Button';
@@ -28,6 +28,8 @@ const AnalyticsDashboard: React.FC<Props> = ({ settings, onChangeView }) => {
       if (match) return match[1];
       return input.trim();
   };
+
+  const isLikeDomain = (txt: string) => /^[a-z0-9]+([\-\.]{1}[a-z0-9]+)*\.[a-z]{2,5}$/i.test(txt);
 
   const processData = (rawData: any) => {
       // Filter out summary keys (all_time, last_7day, etc.) and keep only date keys (YYYYMMDD)
@@ -107,6 +109,10 @@ const AnalyticsDashboard: React.FC<Props> = ({ settings, onChangeView }) => {
 
       // 3. Final Check
       if (finalData.length === 0) {
+          // If the input looks like a domain, the user probably wants Wayback analytics, not Item analytics.
+          if (isLikeDomain(target)) {
+              throw new Error(`'${target}' looks like a website domain. Item Analytics tracks Archive.org digital items (books, audio), not external websites. Use the Wayback Machine tool for website history.`);
+          }
           if (initialError) throw initialError; // Throw the original error if we couldn't resolve
           throw new Error('No view data found. The item Identifier might be incorrect, or the item has no recorded traffic.');
       } else {
@@ -240,27 +246,48 @@ const AnalyticsDashboard: React.FC<Props> = ({ settings, onChangeView }) => {
                             </div>
                         ) : (
                              <div className="mt-2 flex flex-col gap-2">
-                                <p className="text-xs text-gray-400">Not sure if "{identifier}" is the correct ID? Use the Item Lookup tool to verify.</p>
-                                <div className="flex gap-2">
-                                    <Button 
-                                        variant="secondary" 
-                                        className="text-xs h-8"
-                                        onClick={() => {
-                                            if (onChangeView) onChangeView(AppView.METADATA);
-                                        }}
-                                    >
-                                        <Database className="w-3 h-3 mr-1" /> Lookup Item ID
-                                    </Button>
-                                    <Button 
-                                        variant="secondary" 
-                                        className="text-xs h-8"
-                                        onClick={() => {
-                                            if (onChangeView) onChangeView(AppView.SCRAPING);
-                                        }}
-                                    >
-                                        <Search className="w-3 h-3 mr-1" /> Deep Search
-                                    </Button>
-                                </div>
+                                {/* If it looks like a domain, suggest Wayback. Otherwise general help. */}
+                                {identifier && isLikeDomain(identifier) ? (
+                                    <div className="bg-indigo-500/10 p-3 rounded-lg border border-indigo-500/20 flex gap-3">
+                                        <Globe className="w-5 h-5 text-indigo-400 shrink-0" />
+                                        <div>
+                                            <p className="text-sm text-indigo-200 font-bold">Want traffic stats for a website?</p>
+                                            <p className="text-xs text-gray-400 mt-1 mb-2">
+                                                You might be looking for the Wayback Machine instead. This tool is for Archive.org library items.
+                                            </p>
+                                            <Button 
+                                                className="h-7 text-xs bg-indigo-600 hover:bg-indigo-500"
+                                                onClick={() => onChangeView && onChangeView(AppView.WAYBACK)}
+                                            >
+                                                Go to Wayback Tools <ArrowRight className="w-3 h-3 ml-1" />
+                                            </Button>
+                                        </div>
+                                    </div>
+                                ) : (
+                                    <>
+                                        <p className="text-xs text-gray-400">Not sure if "{identifier}" is the correct ID? Use the Item Lookup tool to verify.</p>
+                                        <div className="flex gap-2">
+                                            <Button 
+                                                variant="secondary" 
+                                                className="text-xs h-8"
+                                                onClick={() => {
+                                                    if (onChangeView) onChangeView(AppView.METADATA);
+                                                }}
+                                            >
+                                                <Database className="w-3 h-3 mr-1" /> Lookup Item ID
+                                            </Button>
+                                            <Button 
+                                                variant="secondary" 
+                                                className="text-xs h-8"
+                                                onClick={() => {
+                                                    if (onChangeView) onChangeView(AppView.SCRAPING);
+                                                }}
+                                            >
+                                                <Search className="w-3 h-3 mr-1" /> Deep Search
+                                            </Button>
+                                        </div>
+                                    </>
+                                )}
                              </div>
                         )}
                     </div>

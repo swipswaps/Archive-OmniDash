@@ -150,7 +150,7 @@ const WaybackTools: React.FC<Props> = ({ settings, onChangeView }) => {
           };
 
           await storageService.saveSnapshot(snapshot);
-          // Show quick success state instead of annoying alert
+          // Show quick success state
           const btn = document.getElementById(`btn-dl-${dlKey}`);
           if (btn) btn.classList.add('text-green-500');
           setTimeout(() => {
@@ -164,10 +164,10 @@ const WaybackTools: React.FC<Props> = ({ settings, onChangeView }) => {
       }
   };
 
-  const handleDownloadLatest = async () => {
+  const handleSaveToLibrary = async () => {
     if (!availability?.archived_snapshots?.closest) return;
     const snap = availability.archived_snapshots.closest;
-    const dlKey = 'latest-download';
+    const dlKey = 'latest-save';
     
     setDownloadingId(dlKey);
     setError(null);
@@ -175,22 +175,44 @@ const WaybackTools: React.FC<Props> = ({ settings, onChangeView }) => {
     try {
         const content = await downloadSnapshotContent(snap.url);
         
-        // Generate a deterministic ID for the database so we don't save duplicates easily
         const dbId = `${snap.timestamp}-${availability.url}`;
-
         const snapshot: SavedSnapshot = {
             id: dbId,
             url: snap.url,
             originalUrl: availability.url,
             timestamp: snap.timestamp,
             savedAt: Date.now(),
-            mimetype: 'text/html', // Assumption for availability check
+            mimetype: 'text/html',
             content: content
         };
 
         await storageService.saveSnapshot(snapshot);
-        // Switch to saved tab or just notify? Notification is better.
-        alert("Snapshot saved to Local Database! Go to the 'Saved Snapshots' tab to view it.");
+        alert("Success! Snapshot saved to the 'Saved Snapshots' tab.");
+    } catch (e: any) {
+        setError(e.message || "Save Failed");
+    } finally {
+        setDownloadingId(null);
+    }
+  };
+
+  const handleExportLatest = async () => {
+    if (!availability?.archived_snapshots?.closest) return;
+    const snap = availability.archived_snapshots.closest;
+    const dlKey = 'latest-export';
+    setDownloadingId(dlKey);
+    setError(null);
+
+    try {
+        const content = await downloadSnapshotContent(snap.url);
+        const blob = new Blob([content], { type: 'text/html' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `wayback-${snap.timestamp}-${availability.url.replace(/[^a-z0-9]/gi, '_').slice(0, 30)}.html`;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        URL.revokeObjectURL(url);
     } catch (e: any) {
         setError(e.message || "Download Failed");
     } finally {
@@ -446,23 +468,33 @@ const WaybackTools: React.FC<Props> = ({ settings, onChangeView }) => {
                                     <span className="text-sm text-gray-400 truncate max-w-[250px]" title={availability.url}>{availability.url}</span>
                                 </div>
                                 
-                                <div className="flex gap-2 mt-2">
-                                    <a 
-                                        href={availability.archived_snapshots.closest.url} 
-                                        target="_blank" 
-                                        rel="noreferrer" 
-                                        className="flex-1 flex items-center justify-center gap-2 bg-teal-500 hover:bg-teal-400 text-white font-bold py-3 px-6 rounded-xl transition-all shadow-lg hover:shadow-teal-500/25"
-                                    >
-                                        Open in Wayback Machine <ExternalLink className="w-4 h-4" />
-                                    </a>
-                                    
+                                <a 
+                                    href={availability.archived_snapshots.closest.url} 
+                                    target="_blank" 
+                                    rel="noreferrer" 
+                                    className="mt-2 flex items-center justify-center gap-2 bg-teal-500 hover:bg-teal-400 text-white font-bold py-3 px-6 rounded-xl transition-all shadow-lg hover:shadow-teal-500/25"
+                                >
+                                    Open in Wayback Machine <ExternalLink className="w-4 h-4" />
+                                </a>
+
+                                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mt-1">
                                     <Button
-                                        onClick={handleDownloadLatest}
-                                        disabled={downloadingId === 'latest-download'}
-                                        className="bg-gray-700 hover:bg-gray-600 border border-gray-600 text-teal-400 px-4 rounded-xl"
-                                        title="Download to Local Library"
+                                        onClick={handleSaveToLibrary}
+                                        disabled={downloadingId === 'latest-save'}
+                                        className="bg-gray-700 hover:bg-gray-600 border border-gray-600 text-teal-400 px-4 rounded-xl flex items-center justify-center"
+                                        title="Save to internal DB"
                                     >
-                                        {downloadingId === 'latest-download' ? <Loader2 className="w-5 h-5 animate-spin" /> : <Download className="w-5 h-5" />}
+                                        {downloadingId === 'latest-save' ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <Database className="w-4 h-4 mr-2" />}
+                                        Save to Library
+                                    </Button>
+                                    <Button
+                                        onClick={handleExportLatest}
+                                        disabled={downloadingId === 'latest-export'}
+                                        className="bg-gray-700 hover:bg-gray-600 border border-gray-600 text-indigo-400 px-4 rounded-xl flex items-center justify-center"
+                                        title="Download .html file"
+                                    >
+                                        {downloadingId === 'latest-export' ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <FileDown className="w-4 h-4 mr-2" />}
+                                        Download HTML
                                     </Button>
                                 </div>
                             </div>
@@ -651,7 +683,7 @@ const WaybackTools: React.FC<Props> = ({ settings, onChangeView }) => {
                          <div className="flex flex-col items-center justify-center h-full text-gray-500 space-y-2">
                              <Database className="w-12 h-12 opacity-50" />
                              <p>No snapshots saved locally yet.</p>
-                             <p className="text-xs">Search for a URL, then click the Download icon in the Latest Snapshot view or History tab.</p>
+                             <p className="text-xs">Search for a URL, then click "Save to Library" in the Latest Snapshot view.</p>
                          </div>
                      ) : (
                          <table className="w-full text-sm text-left border-collapse">
