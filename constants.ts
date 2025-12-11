@@ -14,3 +14,8 @@ export const DEFAULT_SETTINGS = {
   demoMode: false,
   corsProxy: '',
 };
+
+export const PROXY_OPTIONS = {
+    ALL_ORIGINS: 'https://api.allorigins.win/raw?url=',
+    CORS_PROXY_IO: 'https://corsproxy.io/?',
+};

@@ -1,4 +1,4 @@
-import { API_BASE } from '../constants';
+import { API_BASE, PROXY_OPTIONS } from '../constants';
 import { WaybackAvailability, CDXRecord } from '../types';
 import { getMockAvailability, getMockCDX } from './mockService';
 
@@ -144,7 +144,22 @@ export const downloadSnapshotContent = async (waybackUrl: string): Promise<strin
         }
         return await res.text();
     } catch (e: any) {
+         // Check for typical CORS/Network errors
          if (!isProxied && (e.message.includes('NetworkError') || e.message.includes('Failed to fetch') || e.name === 'TypeError')) {
+             
+             console.log("Direct fetch blocked by CORS. Attempting automatic fallback via AllOrigins...");
+             try {
+                 // Fallback to a public proxy specifically for this operation to improve UX
+                 // AllOrigins is good for simple text content
+                 const fallbackUrl = `${PROXY_OPTIONS.ALL_ORIGINS}${encodeURIComponent(rawUrl)}`;
+                 const resFallback = await fetch(fallbackUrl);
+                 if (resFallback.ok) {
+                     return await resFallback.text();
+                 }
+             } catch (fallbackError) {
+                 console.error("Fallback proxy also failed", fallbackError);
+             }
+             
              throw new Error("CORS Restriction: You must configure a CORS Proxy in Settings to download raw HTML content.");
          }
          throw e;

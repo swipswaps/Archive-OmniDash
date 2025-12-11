@@ -1,7 +1,8 @@
 import React, { useEffect, useState } from 'react';
 import { AppSettings } from '../types';
 import { Button } from '../components/ui/Button';
-import { ExternalLink, CheckCircle, Save, Shield, TestTube2, Globe2, AlertCircle } from 'lucide-react';
+import { ExternalLink, CheckCircle, Save, Shield, TestTube2, Globe2, AlertCircle, Wand2 } from 'lucide-react';
+import { PROXY_OPTIONS } from '../constants';
 
 interface Props {
   settings: AppSettings;
@@ -27,6 +28,10 @@ const Settings: React.FC<Props> = ({ settings, onUpdate }) => {
     setSaved(true);
     // Hide "Saved" message after 3 seconds
     setTimeout(() => setSaved(false), 3000);
+  };
+
+  const handleUseRecommendedProxy = () => {
+      handleChange('corsProxy', PROXY_OPTIONS.CORS_PROXY_IO);
   };
 
   const hasChanges = JSON.stringify(localSettings) !== JSON.stringify(settings);
@@ -75,25 +80,34 @@ const Settings: React.FC<Props> = ({ settings, onUpdate }) => {
                      <AlertCircle className="w-5 h-5 text-indigo-400 shrink-0 mt-0.5" />
                      <div className="text-sm text-indigo-200">
                          <strong className="text-indigo-100">Search failing?</strong> Internet Archive APIs block direct browser requests (CORS). 
-                         To fix this, use a proxy.
-                         <div className="mt-2 text-indigo-300">
-                             Try public proxy: <code className="bg-indigo-900/50 px-1 py-0.5 rounded text-indigo-100">https://cors-anywhere.herokuapp.com/</code>
-                             <br/>
-                             <span className="text-xs opacity-70">(Or run your own local-cors-proxy)</span>
-                         </div>
+                         To fix this, you must use a proxy.
                      </div>
                  </div>
              </div>
              
              <div>
                 <label className="block text-sm font-medium text-gray-400 mb-1.5">CORS Proxy URL Prefix</label>
-                <input 
-                    type="text" 
-                    value={localSettings.corsProxy || ''}
-                    onChange={(e) => handleChange('corsProxy', e.target.value)}
-                    className="w-full bg-gray-900 border border-gray-700 rounded-lg px-4 py-2.5 text-white focus:ring-2 focus:ring-indigo-500 outline-none transition-all placeholder-gray-600 font-mono"
-                    placeholder="e.g. https://cors-anywhere.herokuapp.com/"
-                />
+                <div className="flex gap-2">
+                    <input 
+                        type="text" 
+                        value={localSettings.corsProxy || ''}
+                        onChange={(e) => handleChange('corsProxy', e.target.value)}
+                        className="flex-1 bg-gray-900 border border-gray-700 rounded-lg px-4 py-2.5 text-white focus:ring-2 focus:ring-indigo-500 outline-none transition-all placeholder-gray-600 font-mono"
+                        placeholder="e.g. https://corsproxy.io/?"
+                    />
+                    <Button 
+                        type="button" 
+                        variant="secondary" 
+                        onClick={handleUseRecommendedProxy}
+                        title="Use Recommended Public Proxy"
+                        className="bg-indigo-600/20 hover:bg-indigo-600/30 text-indigo-300 border border-indigo-500/30"
+                    >
+                        <Wand2 className="w-4 h-4 mr-2" /> Auto-Fill
+                    </Button>
+                </div>
+                 <p className="mt-2 text-xs text-gray-500">
+                    Recommended: <code>{PROXY_OPTIONS.CORS_PROXY_IO}</code> or <code>{PROXY_OPTIONS.ALL_ORIGINS}</code>
+                 </p>
             </div>
          </div>
 
