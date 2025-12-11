@@ -1,13 +1,14 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { Globe, Camera, Calendar, CheckCircle, XCircle, AlertTriangle, ExternalLink, Loader2, Trash2, Search, BarChart3, Clock, X, Filter, Download, Database, Play } from 'lucide-react';
+import { Globe, Camera, Calendar, CheckCircle, XCircle, AlertTriangle, ExternalLink, Loader2, Trash2, Search, BarChart3, Clock, X, Filter, Download, Database, Play, Settings as SettingsIcon } from 'lucide-react';
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, Cell } from 'recharts';
 import { checkAvailability, savePageNow, fetchCDX, downloadSnapshotContent } from '../services/waybackService';
 import { storageService } from '../services/storageService';
-import { AppSettings, WaybackAvailability, CDXRecord, SavedSnapshot } from '../types';
+import { AppSettings, WaybackAvailability, CDXRecord, SavedSnapshot, AppView } from '../types';
 import { Button } from '../components/ui/Button';
 
 interface Props {
   settings: AppSettings;
+  onChangeView?: (view: AppView) => void;
 }
 
 interface SaveRequestItem {
@@ -18,7 +19,7 @@ interface SaveRequestItem {
   timestamp: Date;
 }
 
-const WaybackTools: React.FC<Props> = ({ settings }) => {
+const WaybackTools: React.FC<Props> = ({ settings, onChangeView }) => {
   const [url, setUrl] = useState('');
   const [mode, setMode] = useState<'available' | 'save' | 'cdx' | 'saved'>('available');
   const [loading, setLoading] = useState(false);
@@ -149,10 +150,15 @@ const WaybackTools: React.FC<Props> = ({ settings }) => {
           };
 
           await storageService.saveSnapshot(snapshot);
-          alert(`Saved snapshot from ${formatTimestamp(row.timestamp)} to local database.`);
+          // Show quick success state instead of annoying alert
+          const btn = document.getElementById(`btn-dl-${dlKey}`);
+          if (btn) btn.classList.add('text-green-500');
+          setTimeout(() => {
+              if (btn) btn.classList.remove('text-green-500');
+          }, 2000);
       } catch (e: any) {
           console.error(e);
-          alert(`Download failed: ${e.message}`);
+          setError(e.message || "Download Failed");
       } finally {
           setDownloadingId(null);
       }
@@ -334,13 +340,23 @@ const WaybackTools: React.FC<Props> = ({ settings }) => {
         )}
 
         {error && (
-            <div className="w-full max-w-lg mx-auto mt-8 p-6 bg-red-500/10 border border-red-500/20 rounded-xl text-center animate-in fade-in slide-in-from-bottom-2">
+            <div className="w-full max-w-lg mx-auto mt-8 p-6 bg-red-500/10 border border-red-500/20 rounded-xl text-center animate-in fade-in slide-in-from-bottom-2 z-30">
                 <div className="bg-red-500/20 w-12 h-12 rounded-full flex items-center justify-center mx-auto mb-4">
                     <AlertTriangle className="w-6 h-6 text-red-400" />
                 </div>
                 <h3 className="text-lg font-bold text-red-400 mb-2">Request Failed</h3>
                 <p className="text-gray-300 text-sm mb-4">{error}</p>
-                <Button variant="secondary" onClick={() => setError(null)} className="h-9 text-sm">Dismiss</Button>
+                <div className="flex gap-2 justify-center">
+                    <Button variant="secondary" onClick={() => setError(null)} className="h-9 text-sm">Dismiss</Button>
+                    {error.includes('CORS') && onChangeView && (
+                        <Button 
+                            className="h-9 text-sm bg-indigo-600 hover:bg-indigo-500" 
+                            onClick={() => onChangeView(AppView.SETTINGS)}
+                        >
+                            <SettingsIcon className="w-3 h-3 mr-1" /> Open Settings
+                        </Button>
+                    )}
+                </div>
             </div>
         )}
 
@@ -548,6 +564,7 @@ const WaybackTools: React.FC<Props> = ({ settings }) => {
                                                     <ExternalLink className="w-3 h-3" />
                                                 </a>
                                                 <button
+                                                    id={`btn-dl-${row.timestamp}-${row.original}`}
                                                     onClick={() => handleDownload(row)}
                                                     disabled={downloadingId === `${row.timestamp}-${row.original}`}
                                                     className={`p-1.5 rounded-lg transition-colors flex items-center gap-1 ${downloadingId === `${row.timestamp}-${row.original}` ? 'text-gray-500' : 'text-teal-400 hover:text-teal-300 hover:bg-teal-500/10'}`}

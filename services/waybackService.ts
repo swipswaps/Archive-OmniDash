@@ -130,15 +130,25 @@ export const downloadSnapshotContent = async (waybackUrl: string): Promise<strin
         return "<html><body><h1>Mock Content</h1><p>This is mock HTML content for demo mode.</p></body></html>";
     }
 
-    // Wayback rewrites links. If we want raw content, usually we append 'id_' to the timestamp in the URL,
-    // but simply fetching the standard playback URL usually returns the rewritten HTML which is what we want for viewing.
-    // However, if fetching via proxy, we might get the raw HTML.
-    
-    const res = await fetch(getProxiedUrl(waybackUrl));
-    if (!res.ok) {
-        throw new Error(`Failed to download content: ${res.statusText}`);
+    // Insert 'id_' into the timestamp to request the raw archived content without the Wayback toolbar.
+    // Example: /web/20230101000000/http://... -> /web/20230101000000id_/http://...
+    const rawUrl = waybackUrl.replace(/(\/web\/\d+)/, '$1id_');
+
+    const { corsProxy } = getSettings();
+    const isProxied = corsProxy && corsProxy.trim().length > 0;
+
+    try {
+        const res = await fetch(getProxiedUrl(rawUrl));
+        if (!res.ok) {
+            throw new Error(`Failed to download content: ${res.statusText} (Status ${res.status})`);
+        }
+        return await res.text();
+    } catch (e: any) {
+         if (!isProxied && (e.message.includes('NetworkError') || e.message.includes('Failed to fetch') || e.name === 'TypeError')) {
+             throw new Error("CORS Restriction: You must configure a CORS Proxy in Settings to download raw HTML content.");
+         }
+         throw e;
     }
-    return await res.text();
 };
 
 export const savePageNow = async (url: string, accessKey: string, secretKey: string): Promise<{ saved: boolean, message: string }> => {

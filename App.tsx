@@ -60,12 +60,13 @@ const App: React.FC = () => {
                 settings={settings} 
                 initialQuery={globalQuery}
                 onClearQuery={() => setGlobalQuery('')}
+                onChangeView={setCurrentView}
             />
         );
       case AppView.ANALYTICS:
-        return <AnalyticsDashboard settings={settings} />;
+        return <AnalyticsDashboard settings={settings} onChangeView={setCurrentView} />;
       case AppView.WAYBACK:
-        return <WaybackTools settings={settings} />;
+        return <WaybackTools settings={settings} onChangeView={setCurrentView} />;
       case AppView.SETTINGS:
         return <Settings settings={settings} onUpdate={setSettings} />;
       default:
