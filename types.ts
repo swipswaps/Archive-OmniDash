@@ -51,6 +51,16 @@ export interface CDXRecord {
   length: string;
 }
 
+export interface SavedSnapshot {
+  id: string;
+  url: string;
+  originalUrl: string;
+  timestamp: string;
+  savedAt: number;
+  content: string;
+  mimetype: string;
+}
+
 export type ViewCountData = Record<string, any>;
 
 export interface AppSettings {

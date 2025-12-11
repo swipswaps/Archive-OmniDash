@@ -125,6 +125,22 @@ export const fetchCDX = async (url: string, limit: number = 3000): Promise<CDXRe
   }
 };
 
+export const downloadSnapshotContent = async (waybackUrl: string): Promise<string> => {
+    if (isDemoMode()) {
+        return "<html><body><h1>Mock Content</h1><p>This is mock HTML content for demo mode.</p></body></html>";
+    }
+
+    // Wayback rewrites links. If we want raw content, usually we append 'id_' to the timestamp in the URL,
+    // but simply fetching the standard playback URL usually returns the rewritten HTML which is what we want for viewing.
+    // However, if fetching via proxy, we might get the raw HTML.
+    
+    const res = await fetch(getProxiedUrl(waybackUrl));
+    if (!res.ok) {
+        throw new Error(`Failed to download content: ${res.statusText}`);
+    }
+    return await res.text();
+};
+
 export const savePageNow = async (url: string, accessKey: string, secretKey: string): Promise<{ saved: boolean, message: string }> => {
   if (isDemoMode()) {
       return new Promise(resolve => setTimeout(() => resolve({ saved: true, message: "Mock Mode: URL successfully queued for capture." }), 1000));

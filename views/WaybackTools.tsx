@@ -1,8 +1,9 @@
-import React, { useState, useRef } from 'react';
-import { Globe, Camera, Calendar, CheckCircle, XCircle, AlertTriangle, ExternalLink, Loader2, Trash2, Search, BarChart3, Clock, X, Filter } from 'lucide-react';
+import React, { useState, useRef, useEffect } from 'react';
+import { Globe, Camera, Calendar, CheckCircle, XCircle, AlertTriangle, ExternalLink, Loader2, Trash2, Search, BarChart3, Clock, X, Filter, Download, Database, Play } from 'lucide-react';
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, Cell } from 'recharts';
-import { checkAvailability, savePageNow, fetchCDX } from '../services/waybackService';
-import { AppSettings, WaybackAvailability, CDXRecord } from '../types';
+import { checkAvailability, savePageNow, fetchCDX, downloadSnapshotContent } from '../services/waybackService';
+import { storageService } from '../services/storageService';
+import { AppSettings, WaybackAvailability, CDXRecord, SavedSnapshot } from '../types';
 import { Button } from '../components/ui/Button';
 
 interface Props {
@@ -19,23 +20,46 @@ interface SaveRequestItem {
 
 const WaybackTools: React.FC<Props> = ({ settings }) => {
   const [url, setUrl] = useState('');
-  const [mode, setMode] = useState<'available' | 'save' | 'cdx'>('available');
+  const [mode, setMode] = useState<'available' | 'save' | 'cdx' | 'saved'>('available');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [availability, setAvailability] = useState<WaybackAvailability | null>(null);
   const [cdxData, setCdxData] = useState<CDXRecord[]>([]);
   const [saveHistory, setSaveHistory] = useState<SaveRequestItem[]>([]);
+  const [savedSnapshots, setSavedSnapshots] = useState<SavedSnapshot[]>([]);
   const [hasSearched, setHasSearched] = useState(false);
   const [selectedYear, setSelectedYear] = useState<string | null>(null);
+  const [downloadingId, setDownloadingId] = useState<string | null>(null);
   
   const inputRef = useRef<HTMLInputElement>(null);
 
-  const handleAction = async (e?: React.FormEvent, overrideMode?: 'available' | 'save' | 'cdx') => {
+  // Load saved snapshots when switching to 'saved' mode
+  useEffect(() => {
+    if (mode === 'saved') {
+      loadSavedSnapshots();
+    }
+  }, [mode]);
+
+  const loadSavedSnapshots = async () => {
+    try {
+      const snaps = await storageService.getAllSnapshots();
+      setSavedSnapshots(snaps);
+    } catch (e) {
+      console.error("Failed to load snapshots", e);
+    }
+  };
+
+  const handleAction = async (e?: React.FormEvent, overrideMode?: 'available' | 'save' | 'cdx' | 'saved') => {
     if (e) e.preventDefault();
     setError(null);
 
     const activeMode = overrideMode || mode;
     if (overrideMode) setMode(overrideMode);
+
+    if (activeMode === 'saved') {
+        loadSavedSnapshots();
+        return;
+    }
 
     // Basic URL cleanup
     let targetUrl = url.trim();
@@ -105,6 +129,55 @@ const WaybackTools: React.FC<Props> = ({ settings }) => {
     }
   };
 
+  const handleDownload = async (row: CDXRecord) => {
+      // Create a unique key for UI state
+      const dlKey = `${row.timestamp}-${row.original}`;
+      setDownloadingId(dlKey);
+      
+      try {
+          const waybackUrl = `https://web.archive.org/web/${row.timestamp}/${row.original}`;
+          const content = await downloadSnapshotContent(waybackUrl);
+          
+          const snapshot: SavedSnapshot = {
+              id: dlKey,
+              url: waybackUrl,
+              originalUrl: row.original,
+              timestamp: row.timestamp,
+              savedAt: Date.now(),
+              mimetype: row.mimetype,
+              content: content
+          };
+
+          await storageService.saveSnapshot(snapshot);
+          alert(`Saved snapshot from ${formatTimestamp(row.timestamp)} to local database.`);
+      } catch (e: any) {
+          console.error(e);
+          alert(`Download failed: ${e.message}`);
+      } finally {
+          setDownloadingId(null);
+      }
+  };
+
+  const handleServeSnapshot = (snapshot: SavedSnapshot) => {
+      // Create a Blob from the content
+      const blob = new Blob([snapshot.content], { type: 'text/html' });
+      const blobUrl = URL.createObjectURL(blob);
+      
+      // Open in new tab
+      window.open(blobUrl, '_blank');
+      
+      // Note: In a real persistent app, we might want to revokeObjectURL eventually,
+      // but for opening a tab, we let the browser handle the lifecycle or revoke after a delay.
+      setTimeout(() => URL.revokeObjectURL(blobUrl), 60000); // Revoke after 1 min
+  };
+
+  const handleDeleteSnapshot = async (id: string) => {
+      if (confirm('Delete this saved snapshot?')) {
+          await storageService.deleteSnapshot(id);
+          loadSavedSnapshots();
+      }
+  };
+
   // Process CDX data for the chart
   const getTimelineData = () => {
       if (!cdxData.length) return [];
@@ -139,6 +212,7 @@ const WaybackTools: React.FC<Props> = ({ settings }) => {
     if (mode === 'available') return !!availability;
     if (mode === 'save') return saveHistory.length > 0;
     if (mode === 'cdx') return cdxData.length > 0;
+    if (mode === 'saved') return savedSnapshots.length > 0;
     return false;
   };
 
@@ -167,8 +241,9 @@ const WaybackTools: React.FC<Props> = ({ settings }) => {
                             type="text"
                             value={url}
                             onChange={(e) => setUrl(e.target.value)}
-                            placeholder="Enter URL to search (e.g. google.com)"
+                            placeholder={mode === 'saved' ? "Filter saved snapshots..." : "Enter URL to search (e.g. google.com)"}
                             className="w-full bg-gray-900 border border-gray-600 rounded-xl pl-12 pr-10 py-4 text-lg text-gray-100 focus:ring-2 focus:ring-indigo-500 focus:border-transparent outline-none shadow-inner transition-all placeholder-gray-600"
+                            disabled={mode === 'saved'}
                         />
                         
                         {url && (
@@ -184,7 +259,7 @@ const WaybackTools: React.FC<Props> = ({ settings }) => {
 
                     <Button 
                         type="submit" 
-                        disabled={!url.trim()}
+                        disabled={mode === 'saved' || !url.trim()}
                         isLoading={loading} 
                         className={`px-8 rounded-xl min-w-[120px] text-lg font-medium shadow-lg transition-all active:scale-95 ${
                             mode === 'save' 
@@ -224,13 +299,21 @@ const WaybackTools: React.FC<Props> = ({ settings }) => {
             >
                 <Camera className="w-4 h-4" /> Save Page Now
             </button>
+            <button 
+                onClick={() => handleAction(undefined, 'saved')}
+                className={`flex-1 min-w-[140px] py-4 px-6 flex items-center justify-center gap-2 transition-all font-medium text-sm uppercase tracking-wide border-b-2 ${
+                    mode === 'saved' ? 'bg-gray-800 text-green-400 border-green-500' : 'border-transparent text-gray-500 hover:text-gray-300 hover:bg-gray-800'
+                }`}
+            >
+                <Database className="w-4 h-4" /> Saved Snapshots
+            </button>
          </div>
       </div>
 
       {/* Results Area */}
       <div className="flex-1 bg-gray-800 rounded-2xl border border-gray-700 shadow-lg min-h-[400px] overflow-hidden flex flex-col p-6 relative">
         
-        {!loading && !error && !hasResults() && !hasSearched && (
+        {!loading && !error && !hasResults() && !hasSearched && mode !== 'saved' && (
             <div className="absolute inset-0 flex flex-col items-center justify-center text-gray-600 space-y-6 pointer-events-none opacity-50 select-none">
                 {mode === 'available' && <Search className="w-20 h-20" />}
                 {mode === 'save' && <Camera className="w-20 h-20" />}
@@ -261,7 +344,7 @@ const WaybackTools: React.FC<Props> = ({ settings }) => {
             </div>
         )}
 
-        {!loading && !error && !hasResults() && hasSearched && (
+        {!loading && !error && !hasResults() && hasSearched && mode !== 'saved' && (
             <div className="flex flex-col items-center justify-center h-full text-gray-400 space-y-2 m-auto animate-in fade-in">
                 <p className="text-lg font-medium text-gray-300">No snapshots found</p>
                 <p className="text-sm">The Wayback Machine doesn't have any records for this URL.</p>
@@ -438,7 +521,7 @@ const WaybackTools: React.FC<Props> = ({ settings }) => {
                                     <th className="px-5 py-3 font-medium text-xs uppercase tracking-wider">Date</th>
                                     <th className="px-5 py-3 font-medium text-xs uppercase tracking-wider">Status</th>
                                     <th className="px-5 py-3 font-medium text-xs uppercase tracking-wider">Type</th>
-                                    <th className="px-5 py-3 font-medium text-xs uppercase tracking-wider text-right">Link</th>
+                                    <th className="px-5 py-3 font-medium text-xs uppercase tracking-wider text-right">Actions</th>
                                 </tr>
                             </thead>
                             <tbody className="divide-y divide-gray-800">
@@ -454,14 +537,25 @@ const WaybackTools: React.FC<Props> = ({ settings }) => {
                                         </td>
                                         <td className="px-5 py-3 text-gray-500 text-xs truncate max-w-[100px]">{row.mimetype}</td>
                                         <td className="px-5 py-3 text-right">
-                                            <a 
-                                                href={`https://web.archive.org/web/${row.timestamp}/${row.original}`} 
-                                                target="_blank" 
-                                                rel="noreferrer" 
-                                                className="text-orange-400 hover:text-orange-300 hover:bg-orange-500/10 p-1.5 rounded-lg inline-flex items-center gap-1 transition-colors text-xs font-medium"
-                                            >
-                                                View <ExternalLink className="w-3 h-3" />
-                                            </a>
+                                            <div className="flex items-center justify-end gap-2">
+                                                <a 
+                                                    href={`https://web.archive.org/web/${row.timestamp}/${row.original}`} 
+                                                    target="_blank" 
+                                                    rel="noreferrer" 
+                                                    className="text-gray-400 hover:text-white p-1.5 rounded-lg transition-colors"
+                                                    title="Open on Web"
+                                                >
+                                                    <ExternalLink className="w-3 h-3" />
+                                                </a>
+                                                <button
+                                                    onClick={() => handleDownload(row)}
+                                                    disabled={downloadingId === `${row.timestamp}-${row.original}`}
+                                                    className={`p-1.5 rounded-lg transition-colors flex items-center gap-1 ${downloadingId === `${row.timestamp}-${row.original}` ? 'text-gray-500' : 'text-teal-400 hover:text-teal-300 hover:bg-teal-500/10'}`}
+                                                    title="Download HTML to Database"
+                                                >
+                                                    {downloadingId === `${row.timestamp}-${row.original}` ? <Loader2 className="w-3 h-3 animate-spin" /> : <Download className="w-3 h-3" />}
+                                                </button>
+                                            </div>
                                         </td>
                                     </tr>
                                 )) : (
@@ -475,6 +569,68 @@ const WaybackTools: React.FC<Props> = ({ settings }) => {
                         </table>
                     </div>
                  </div>
+            </div>
+        )}
+
+        {mode === 'saved' && (
+            <div className="flex flex-col h-full animate-in fade-in duration-300">
+                <div className="flex justify-between items-center mb-4">
+                     <h3 className="text-sm font-bold text-gray-400 uppercase tracking-wider">Local Database ({savedSnapshots.length})</h3>
+                </div>
+
+                <div className="flex-1 overflow-auto bg-gray-900 rounded-xl border border-gray-700 shadow-inner custom-scrollbar">
+                     {savedSnapshots.length === 0 ? (
+                         <div className="flex flex-col items-center justify-center h-full text-gray-500 space-y-2">
+                             <Database className="w-12 h-12 opacity-50" />
+                             <p>No snapshots saved locally yet.</p>
+                             <p className="text-xs">Go to the "History" tab and click the Download icon to save pages.</p>
+                         </div>
+                     ) : (
+                         <table className="w-full text-sm text-left border-collapse">
+                            <thead className="bg-gray-800 text-gray-400 sticky top-0 z-10">
+                                <tr>
+                                    <th className="px-5 py-3 font-medium text-xs uppercase tracking-wider">Snapshot Date</th>
+                                    <th className="px-5 py-3 font-medium text-xs uppercase tracking-wider">Original URL</th>
+                                    <th className="px-5 py-3 font-medium text-xs uppercase tracking-wider">Saved At</th>
+                                    <th className="px-5 py-3 font-medium text-xs uppercase tracking-wider text-right">Actions</th>
+                                </tr>
+                            </thead>
+                            <tbody className="divide-y divide-gray-800">
+                                {savedSnapshots.map((snap) => (
+                                    <tr key={snap.id} className="hover:bg-gray-800 transition-colors">
+                                        <td className="px-5 py-3 font-mono text-gray-300 whitespace-nowrap">
+                                            {formatTimestamp(snap.timestamp)}
+                                        </td>
+                                        <td className="px-5 py-3 text-gray-400 truncate max-w-xs" title={snap.originalUrl}>
+                                            {snap.originalUrl}
+                                        </td>
+                                        <td className="px-5 py-3 text-gray-500 text-xs">
+                                            {new Date(snap.savedAt).toLocaleString()}
+                                        </td>
+                                        <td className="px-5 py-3 text-right">
+                                            <div className="flex items-center justify-end gap-3">
+                                                <button
+                                                    onClick={() => handleServeSnapshot(snap)}
+                                                    className="text-green-400 hover:text-green-300 hover:bg-green-500/10 p-1.5 rounded-lg flex items-center gap-1 text-xs font-bold"
+                                                    title="Serve from Local DB"
+                                                >
+                                                    <Play className="w-3 h-3" /> View Local
+                                                </button>
+                                                <button
+                                                    onClick={() => handleDeleteSnapshot(snap.id)}
+                                                    className="text-red-400 hover:text-red-300 hover:bg-red-500/10 p-1.5 rounded-lg"
+                                                    title="Delete"
+                                                >
+                                                    <Trash2 className="w-3 h-3" />
+                                                </button>
+                                            </div>
+                                        </td>
+                                    </tr>
+                                ))}
+                            </tbody>
+                        </table>
+                     )}
+                </div>
             </div>
         )}
       </div>
