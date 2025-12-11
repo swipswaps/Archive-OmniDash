@@ -1,0 +1,5 @@
+{
+  "name": "Archive OmniDash",
+  "description": "A unified dashboard for interacting with Internet Archive services including Metadata, Wayback Machine, and Analytics.",
+  "requestFramePermissions": []
+}
