@@ -254,9 +254,12 @@ ${item.page_content.substring(0, 1000)}${item.page_content.length > 1000 ? '...'
              <div className="w-full h-full overflow-auto p-0 bg-white text-gray-900">
                  {/* XLSX Preview Styling */}
                  <style>{`
-                    table { border-collapse: collapse; font-size: 11px; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; }
-                    th, td { border: 1px solid #d1d5db; padding: 3px 6px; text-align: left; max-width: 400px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; vertical-align: top; }
-                    th { background-color: #f3f4f6; font-weight: 600; color: #374151; position: sticky; top: 0; z-index: 10; box-shadow: 0 1px 0 #d1d5db; }
+                    #xlsx-preview { border-collapse: collapse; font-size: 12px; font-family: "Segoe UI", Roboto, Helvetica, Arial, sans-serif; width: 100%; table-layout: fixed; }
+                    #xlsx-preview td, #xlsx-preview th { border: 1px solid #e5e7eb; padding: 4px 8px; text-align: left; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; vertical-align: middle; height: 28px; box-sizing: border-box; }
+                    #xlsx-preview td { max-width: 300px; color: #1f2937; }
+                    #xlsx-preview th { background-color: #f9fafb; font-weight: 600; color: #374151; position: sticky; top: 0; z-index: 10; box-shadow: 0 1px 0 #e5e7eb; }
+                    #xlsx-preview tr:nth-child(even) { background-color: #f9fafb; }
+                    #xlsx-preview tr:hover { background-color: #eff6ff; }
                  `}</style>
                  <div dangerouslySetInnerHTML={{ __html: xlsxPreview }} />
              </div>
